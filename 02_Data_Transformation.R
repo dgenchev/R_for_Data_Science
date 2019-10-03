@@ -124,3 +124,132 @@ delays %>%
   ggplot(mapping = aes(x = n, y = delay)) + 
   geom_point(alpha = 1/10)
 
+# plot the skill of the batter (measured by the batting average, ba) 
+# against the number of opportunities to hit the ball (measured by at bat, ab)
+# Convert to a tibble so it prints nicely
+library(Lahman)
+batting <- as_tibble(Lahman::Batting)
+
+batters <- batting %>% 
+  group_by(playerID) %>% 
+  summarise(
+    ba = sum(H, na.rm = TRUE) / sum(AB, na.rm = TRUE),
+    ab = sum(AB, na.rm = TRUE)
+  )
+
+batters %>% 
+  filter(ab > 100) %>% 
+  ggplot(mapping = aes(x = ab, y = ba)) +
+  geom_point() + 
+  geom_smooth(se = FALSE)
+#> `geom_smooth()` using method = 'gam' and formula 'y ~ s(x, bs = "cs")'
+
+
+# Useful summary functions ------------------------------------------------
+
+# Measures of location: mean(x) and median(x)
+not_cancelled %>% 
+  group_by(year, month, day) %>% 
+  summarise(
+    avg_delay1 = mean(arr_delay),
+    avg_delay2 = mean(arr_delay[arr_delay > 0]) # the average positive delay
+  )
+
+# Measures of spread: sd(x), IQR(x), mad(x)
+# IQR() and mad(x) are robust equivalents to sd(), useful if you have outliers
+# Why is distance to some destinations more variable than to others?
+not_cancelled %>% 
+  group_by(dest) %>% 
+  summarise(distance_sd = sd(distance)) %>% 
+  arrange(desc(distance_sd))
+
+# Measures of rank: min(x), quantile(x, 0.25), max(x)
+# When do the first and last flights leave each day?
+not_cancelled %>% 
+  group_by(year, month, day) %>% 
+  summarise(
+    first = min(dep_time),
+    last = max(dep_time)
+  )
+
+# Measures of position: first(x), nth(x, 2), last(x)
+not_cancelled %>% 
+  group_by(year, month, day) %>% 
+  summarise(
+    first_dep = first(dep_time), 
+    last_dep = last(dep_time)
+  )
+
+not_cancelled %>% 
+  group_by(year, month, day) %>% 
+  mutate(r = min_rank(desc(dep_time))) %>% 
+  filter(r %in% range(r))
+
+# Counts: n(), sum(!is.na(x)), n_distinct(x)
+# Which destinations have the most carriers?
+not_cancelled %>% 
+  group_by(dest) %>% 
+  summarise(carriers = n_distinct(carrier)) %>% 
+  arrange(desc(carriers))
+
+not_cancelled %>% 
+  count(dest)
+# Can provide a weight variable
+not_cancelled %>% 
+  count(tailnum, wt = distance)
+
+# Counts and proportions of logical values: sum(x > 10), mean(y == 0)
+# hen used with numeric functions, TRUE is converted to 1 and FALSE to 0. 
+# This makes sum() and mean() very useful: sum(x) gives the number of TRUEs in x, 
+# and mean(x) gives the proportion.
+# How many flights left before 5am? (these usually indicate delayed
+# flights from the previous day)
+not_cancelled %>% 
+  group_by(year, month, day) %>% 
+  summarise(n_early = sum(dep_time < 500))
+
+# What proportion of flights are delayed by more than an hour?
+not_cancelled %>% 
+  group_by(year, month, day) %>% 
+  summarise(hour_perc = mean(arr_delay > 60))
+
+
+# Grouping by multiple vars -----------------------------------------------
+
+daily <- group_by(flights, year, month, day)
+(per_day   <- summarise(daily, flights = n()))
+(per_month <- summarise(per_day, flights = sum(flights)))
+(per_year  <- summarise(per_month, flights = sum(flights)))
+
+# Be careful when progressively rolling up summaries: it’s OK for sums and counts,
+# but you need to think about weighting means and variances, and it’s not possible 
+# to do it exactly for rank-based statistics like the median. 
+# In other words, the sum of groupwise sums is the overall sum, 
+# but the median of groupwise medians is not the overall median.
+
+
+# Ungrouping --------------------------------------------------------------
+
+daily %>% 
+  ungroup() %>%             # no longer grouped by date
+  summarise(flights = n())  # all flights
+
+
+# Grouped mutates ---------------------------------------------------------
+
+# Find the worst members of each group:
+flights_sml %>% 
+  group_by(year, month, day) %>%
+  filter(rank(desc(arr_delay)) < 10)
+
+# Find all groups bigger than a threshold:
+popular_dests <- flights %>% 
+  group_by(dest) %>% 
+  filter(n() > 365)
+popular_dests
+
+# Standardise to compute per group metrics:
+popular_dests %>% 
+  filter(arr_delay > 0) %>% 
+  mutate(prop_delay = arr_delay / sum(arr_delay)) %>% 
+  select(year:day, dest, arr_delay, prop_delay)
